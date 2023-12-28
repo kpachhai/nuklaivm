@@ -9,8 +9,9 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 
 	"github.com/ava-labs/hypersdk/chain"
+	"github.com/ava-labs/hypersdk/codec"
+	"github.com/kpachhai/nuklaivm/consts"
 	"github.com/kpachhai/nuklaivm/genesis"
-	"github.com/kpachhai/nuklaivm/utils"
 )
 
 type JSONRPCServer struct {
@@ -71,7 +72,7 @@ func (j *JSONRPCServer) Balance(req *http.Request, args *BalanceArgs, reply *Bal
 	ctx, span := j.c.Tracer().Start(req.Context(), "Server.Balance")
 	defer span.End()
 
-	addr, err := utils.ParseAddress(args.Address)
+	addr, err := codec.ParseAddressBech32(consts.HRP, args.Address)
 	if err != nil {
 		return err
 	}

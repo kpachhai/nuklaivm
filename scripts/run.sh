@@ -17,14 +17,16 @@ if ! [[ "$0" =~ scripts/run.sh ]]; then
   exit 255
 fi
 
-VERSION=v1.10.12
+VERSION=v1.10.15
 MAX_UINT64=18446744073709551615
 MODE=${MODE:-run}
+AGO_LOGLEVEL=${AGO_LOGLEVEL:-info}
 LOGLEVEL=${LOGLEVEL:-info}
 STATESYNC_DELAY=${STATESYNC_DELAY:-0}
 MIN_BLOCK_GAP=${MIN_BLOCK_GAP:-100}
 STORE_TXS=${STORE_TXS:-false}
 UNLIMITED_USAGE=${UNLIMITED_USAGE:-false}
+ADDRESS=${ADDRESS:-nuklai1qrzvk4zlwj9zsacqgtufx7zvapd3quufqpxk5rsdd4633m4wz2fdjss0gwx}
 if [[ ${MODE} != "run" ]]; then
   LOGLEVEL=debug
   STATESYNC_DELAY=100000000 # 100ms
@@ -42,6 +44,7 @@ if ${UNLIMITED_USAGE}; then
 fi
 
 echo "Running with:"
+echo AGO_LOGLEVEL: ${AGO_LOGLEVEL}
 echo LOGLEVEL: ${LOGLEVEL}
 echo VERSION: ${VERSION}
 echo MODE: ${MODE}
@@ -51,6 +54,7 @@ echo MIN_BLOCK_GAP \(ms\): ${MIN_BLOCK_GAP}
 echo STORE_TXS: ${STORE_TXS}
 echo WINDOW_TARGET_UNITS: ${WINDOW_TARGET_UNITS}
 echo MAX_BLOCK_UNITS: ${MAX_BLOCK_UNITS}
+echo ADDRESS: ${ADDRESS}
 
 ############################
 # build avalanchego
@@ -115,7 +119,9 @@ find ${TMPDIR}/avalanchego-${VERSION}
 # Always create allocations (linter doesn't like tab)
 echo "creating allocations file"
 cat <<EOF > ${TMPDIR}/allocations.json
-[{"address":"nuklai1rvzhmceq997zntgvravfagsks6w0ryud3rylh4cdvayry0dl97ns9cs04w", "balance":10000000000000000000}]
+[
+  {"address":"${ADDRESS}", "balance":10000000000000000000}
+]
 EOF
 
 GENESIS_PATH=$2
@@ -143,9 +149,11 @@ rm -rf ${TMPDIR}/nuklaivm-e2e-profiles
 cat <<EOF > ${TMPDIR}/nuklaivm.config
 {
   "mempoolSize": 10000000,
-  "mempoolPayerSize": 10000000,
-  "mempoolExemptPayers":["nuklai1rvzhmceq997zntgvravfagsks6w0ryud3rylh4cdvayry0dl97ns9cs04w"],
-  "parallelism": 5,
+  "mempoolSponsorSize": 10000000,
+  "mempoolExemptSponsors":["${ADDRESS}"],
+  "signatureVerificationCores": 2,
+  "rootGenerationCores": 2,
+  "transactionExecutionCores": 2,
   "verifySignatures":true,
   "storeTransactions": ${STORE_TXS},
   "streamingBacklogSize": 10000000,
@@ -165,7 +173,7 @@ rm -f ${TMPDIR}/nuklaivm.subnet
 cat <<EOF > ${TMPDIR}/nuklaivm.subnet
 {
   "proposerMinBlockDelay": 0,
-  "proposerNumHistoricalBlocks": 768
+  "proposerNumHistoricalBlocks": 50000
 }
 EOF
 
@@ -191,7 +199,7 @@ ACK_GINKGO_RC=true ginkgo build ./tests/e2e
 # download avalanche-network-runner
 # https://github.com/ava-labs/avalanche-network-runner
 ANR_REPO_PATH=github.com/ava-labs/avalanche-network-runner
-ANR_VERSION=v1.7.2
+ANR_VERSION=24d0d6a398558c9d2572cd1bc6bed40226681558
 # version set
 go install -v ${ANR_REPO_PATH}@${ANR_VERSION}
 
@@ -241,7 +249,7 @@ echo "running e2e tests"
 ./tests/e2e/e2e.test \
 --ginkgo.v \
 --network-runner-log-level verbo \
---avalanchego-log-level ${LOGLEVEL} \
+--avalanchego-log-level ${AGO_LOGLEVEL} \
 --network-runner-grpc-endpoint="0.0.0.0:12352" \
 --network-runner-grpc-gateway-endpoint="0.0.0.0:12353" \
 --avalanchego-path=${AVALANCHEGO_PATH} \
