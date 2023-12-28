@@ -1,0 +1,78 @@
+// Copyright (C) 2023, AllianceBlock. All rights reserved.
+// See the file LICENSE for licensing terms.
+
+package cmd
+
+import (
+	"context"
+
+	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/hypersdk/chain"
+	"github.com/ava-labs/hypersdk/crypto/ed25519"
+	"github.com/ava-labs/hypersdk/rpc"
+	"github.com/ava-labs/hypersdk/utils"
+	"github.com/kpachhai/nuklaivm/actions"
+	"github.com/kpachhai/nuklaivm/auth"
+	"github.com/kpachhai/nuklaivm/consts"
+	brpc "github.com/kpachhai/nuklaivm/rpc"
+	"github.com/spf13/cobra"
+)
+
+var spamCmd = &cobra.Command{
+	Use: "spam",
+	RunE: func(*cobra.Command, []string) error {
+		return ErrMissingSubcommand
+	},
+}
+
+var runSpamCmd = &cobra.Command{
+	Use: "run",
+	RunE: func(*cobra.Command, []string) error {
+		var bclient *brpc.JSONRPCClient
+		var maxFeeParsed *uint64
+		if maxFee >= 0 {
+			v := uint64(maxFee)
+			maxFeeParsed = &v
+		}
+		return handler.Root().Spam(maxTxBacklog, maxFeeParsed, randomRecipient,
+			func(uri string, networkID uint32, chainID ids.ID) {
+				bclient = brpc.NewJSONRPCClient(uri, networkID, chainID)
+			},
+			func(pk ed25519.PrivateKey) chain.AuthFactory {
+				return auth.NewED25519Factory(pk)
+			},
+			func(choice int, address string) (uint64, error) {
+				balance, err := bclient.Balance(context.TODO(), address)
+				if err != nil {
+					return 0, err
+				}
+				utils.Outf(
+					"%d) {{cyan}}address:{{/}} %s {{cyan}}balance:{{/}} %s %s\n",
+					choice,
+					address,
+					utils.FormatBalance(balance, consts.Decimals),
+					consts.Symbol,
+				)
+				return balance, err
+			},
+			func(ctx context.Context, chainID ids.ID) (chain.Parser, error) {
+				return bclient.Parser(ctx)
+			},
+			func(pk ed25519.PublicKey, amount uint64) chain.Action {
+				return &actions.Transfer{
+					To:    pk,
+					Value: amount,
+				}
+			},
+			func(cli *rpc.JSONRPCClient, pk ed25519.PrivateKey) func(context.Context, uint64) error {
+				return func(ictx context.Context, count uint64) error {
+					_, _, err := sendAndWait(ictx, nil, &actions.Transfer{
+						To:    pk.PublicKey(),
+						Value: count, // prevent duplicate txs
+					}, cli, bclient, auth.NewED25519Factory(pk), false)
+					return err
+				}
+			},
+		)
+	},
+}
